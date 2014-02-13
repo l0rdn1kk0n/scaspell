@@ -30,7 +30,7 @@ case class AspellService() extends Service[Request, Response] {
                     val params = Params(req.getUri())
 
                     req.getParams("q").toSeq match {
-                        case Some(w: Seq[String]) => aspell.checkWords(w, params.get("lang"), params.getInt("limit")) map {
+                        case w: Seq[String] => aspell.checkWords(w, params.get("lang"), params.getInt("limit")) map {
                             words =>
                                 val content = words.toJson.compactPrint
                                 res.setContentString(content)
@@ -55,18 +55,6 @@ case class AspellService() extends Service[Request, Response] {
                                 res
                         }
                         case _ => Future.value(res)
-                    }
-                case uri: String if uri.startsWith("/availableLanguages") =>
-                    val params = Params(req.getUri())
-
-                    aspell.availableLanguages(params.get("filter")) map {
-                        languages =>
-                            val content = languages.toJson.compactPrint
-                            res.setContentString(content)
-                            res.setContentType("application/json")
-                            res.setStatusCode(200)
-
-                            res
                     }
                 case _ => Future.value(res)
             }

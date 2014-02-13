@@ -4,7 +4,11 @@ import com.twitter.finagle.http._
 import java.net.InetSocketAddress
 import com.twitter.finagle.builder.ServerBuilder
 import com.twitter.finagle.http.service.RoutingService
-import com.twitter.finagle.Service
+import com.twitter.finagle.http.path._
+import de.agilecoders.projects.scaspell.api.Aspell
+import de.agilecoders.projects.scaspell.util.RequestAwareRoutingService
+import de.agilecoders.projects.scaspell.service._
+import com.twitter.finagle.http.path./
 import com.twitter.finagle.http.RichHttp
 
 /**
@@ -13,27 +17,33 @@ import com.twitter.finagle.http.RichHttp
  * @author miha
  */
 object Server extends App {
-    /*val routing = RequestAwareRoutingService.byRequest { request =>
-        (request., Path(request.path)) match {
-            case Method.Get -> Root / "api1" / Integer(userId) => myShowService
-            case Method.Post -> Root / "api2" / Integer(userId) => new SearchService(userId)
+    private lazy val root = Root / "api" / "v1"
+    private lazy val spellchecker = Aspell()
+    private lazy val getMethodService = GetModesService(spellchecker)
+    private lazy val getLanguageService = GetLanguagesService(spellchecker)
+    private lazy val getVersionService = GetVersionService(spellchecker)
+    private lazy val checkService = CheckService(spellchecker)
+    private lazy val badRequest = BadRequestService()
+
+    val routing: RoutingService[Request] = RequestAwareRoutingService.byRequest[Request] {
+        case r: Request => (r.getMethod(), Path(r.path)) match {
+            case Method.Get -> `root` / "mode" => getMethodService
+            case Method.Get -> `root` / "language" => getLanguageService
+            case Method.Get -> `root` / "version" => getVersionService
+            case Method.Post -> `root` / "check" => checkService
+            case Method.Get -> `root` / "check" => checkService
+            case _ => badRequest
         }
-    }        */
+        case _ => badRequest
+    }
 
     val httpServer = ServerBuilder()
                      .codec(RichHttp[Request](Http()))
                      .bindTo(new InetSocketAddress(8080))
                      .name("scaspell-service")
-                     .build(AspellService())
+                     .build(routing)
 }
 
-object RequestAwareRoutingService {
-    def byRequest[REQUEST](routes: PartialFunction[Request, Service[REQUEST, Response]]) =
-        new RoutingService(
-            new PartialFunction[Request, Service[REQUEST, Response]] {
-                def apply(request: Request) = routes(request)
 
-                def isDefinedAt(request: Request) = routes.isDefinedAt(request)
-            })
-}
+
 

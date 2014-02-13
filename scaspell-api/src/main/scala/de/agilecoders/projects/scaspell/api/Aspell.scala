@@ -19,6 +19,10 @@ case class Aspell() extends Spellchecker {
         Await.result(availableLanguages())
     }
 
+    private lazy val _availableModes: Seq[String] = {
+        Await.result(availableModes()).map(_._1).toSeq
+    }
+
     def availableLanguages(filter: Option[String] = None): Future[Seq[String]] = Future {
         val languages = Process("aspell dump dicts").lines.map(_.trim)
 
@@ -27,6 +31,10 @@ case class Aspell() extends Spellchecker {
                 languages.filter(!_.contains("-"))
             case _ => languages
         }.getOrElse(languages)
+    }
+
+    def version(): Future[String] = Future {
+        "aspell -v".!!.replace("@(#) ", "").trim
     }
 
     def checkWords(words: Seq[String], lang: Option[String] = None, limit: Option[Int] = None): Future[Map[String, Seq[String]]] = Future {
@@ -49,10 +57,14 @@ case class Aspell() extends Spellchecker {
         }
     }
 
-    private def exec(lang: Option[String] = None, limit: Option[Int] = None)(f: => String): Map[String, Seq[String]] = {
+    private def exec(lang: Option[String] = None,
+                     limit: Option[Int] = None,
+                     mode:Option[String] = None)(f: => String): Map[String, Seq[String]] = {
         val l = Strings.toLanguageParameter(lang.filter(_availableLanguages.contains))
+        val m = Strings.toModeParameter(mode.filter(_availableModes.contains))
+
         val echo = s"echo $f"
-        val aspell = s"aspell pipe --encoding=utf-8 $l"
+        val aspell = s"aspell pipe --encoding=utf-8 $l $m"
         val grep = """grep -v "\*|\@|^$""""
 
         val results = (echo #| aspell #| grep #| "uniq").lines_!
@@ -60,7 +72,44 @@ case class Aspell() extends Spellchecker {
         results.filter(r => !r.isEmpty && r(0) == '&')
         results.map(parse(_, limit.getOrElse(25))).filter(_.isDefined).map(_.get).toMap
     }
+
+    /**
+     * Lists available modes
+     *
+     * @return
+     */
+    override def availableModes() = Future {
+        "aspell --dump=modes".lines_!.map {
+            line =>
+                val s = line.split(" ", 2)
+
+                (s(0).trim, s(1).trim)
+        }.toMap
+    }
+
+    /**
+     * Produce a list of misspelled words
+     *
+     * @param input
+     * @param mode
+     * @param lang
+     * @param limit
+     * @return
+     */
+    override def check(input: String, mode: Option[String], lang: Option[String], limit: Option[Int]) = Future {
+        exec(lang, limit, mode) {
+            mode.map {
+                case "html" | "email" | "sgml" | "texinfo" | "perl" | "ccpp" |
+                     "nroff" | "tex" | "comment" | "url" | "none" =>
+                    Strings.toHtml(input)
+                case _ =>
+                    Strings.toWordsList(input.split(","))
+            }.getOrElse("")
+        }
+    }
 }
+
+
 
 object Strings {
 
@@ -74,6 +123,10 @@ object Strings {
 
     def toLanguageParameter(lang: Option[String]): String = {
         lang.filter(!_.isEmpty).map(s => "--lang=" + s).getOrElse("")
+    }
+
+    def toModeParameter(lang: Option[String]): String = {
+        lang.filter(!_.isEmpty).map(s => "--mode=" + s).getOrElse("")
     }
 
 
